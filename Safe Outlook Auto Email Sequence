@@ -1,0 +1,171 @@
+{
+  "name": "FSBO - Safe Email Sequence",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/30 9-18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-safe-sequence",
+      "name": "Every 30 Min (9a-6p ET)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "",
+        "sheetName": "FSBO_LEADS",
+        "options": {
+          "returnAll": true,
+          "addRowNumber": true
+        }
+      },
+      "id": "gsheets-read-leads",
+      "name": "Read FSBO_LEADS",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const now = new Date();\n\nconst templates = {\n  1: {\n    subject: 'Question about {{PROPERTY_ADDRESS}}',\n    body: `Hi,\\n\\nI saw {{PROPERTY_ADDRESS}} and wanted to reach out. This is {{MY_NAME}} with {{BROKERAGE}}. If you're open to it, I can share a few options that may help you sell with less hassle.\\n\\nReply STOP to opt out.`\n  },\n  2: {\n    subject: 'Quick follow-up on {{PROPERTY_ADDRESS}}',\n    body: `Hi,\\n\\nFollowing up on {{PROPERTY_ADDRESS}}. I'm {{MY_NAME}} at {{BROKERAGE}} and can provide local insights if helpful.\\n\\nReply STOP to opt out.`\n  },\n  3: {\n    subject: 'Still selling {{PROPERTY_ADDRESS}}?',\n    body: `Hi,\\n\\nJust checking in on {{PROPERTY_ADDRESS}}. {{MY_NAME}} from {{BROKERAGE}} here—happy to help if you want support or market data.\\n\\nReply STOP to opt out.`\n  },\n  4: {\n    subject: 'Resources for your FSBO at {{PROPERTY_ADDRESS}}',\n    body: `Hi,\\n\\nI put together a few FSBO resources that could help with {{PROPERTY_ADDRESS}}. This is {{MY_NAME}} with {{BROKERAGE}}. Let me know if you'd like them.\\n\\nReply STOP to opt out.`\n  },\n  5: {\n    subject: 'Final follow-up for {{PROPERTY_ADDRESS}}',\n    body: `Hi,\\n\\nFinal follow-up from {{MY_NAME}} at {{BROKERAGE}} about {{PROPERTY_ADDRESS}}. If you'd like support, I can help.\\n\\nReply STOP to opt out.`\n  }\n};\n\nreturn items\n  .map((item) => item.json)\n  .filter((row) => {\n    const sequenceStatus = (row.SequenceStatus ?? '').toString().trim().toUpperCase();\n    const emailSkipTraced = (row.EmailSkipTraced ?? '').toString().trim();\n    const status = (row.Status ?? '').toString().trim().toUpperCase();\n    const nextSendAtRaw = (row.NextSendAt ?? '').toString().trim();\n\n    if (!(sequenceStatus === 'READY' || sequenceStatus === 'RUNNING')) return false;\n    if (!emailSkipTraced) return false;\n    if (status === 'REPLIED') return false;\n\n    const nextSendAt = nextSendAtRaw ? new Date(nextSendAtRaw) : new Date(0);\n    if (Number.isNaN(nextSendAt.getTime())) return false;\n\n    return nextSendAt <= now;\n  })\n  .map((row) => {\n    const currentDay = Number.parseInt((row.SequenceDay ?? '1').toString(), 10);\n    const safeDay = Number.isFinite(currentDay) ? Math.min(Math.max(currentDay, 1), 5) : 1;\n    const template = templates[safeDay];\n\n    const nextDay = Math.min(safeDay + 1, 5);\n    const sentAt = new Date();\n    const nextSend = new Date(sentAt);\n    nextSend.setDate(nextSend.getDate() + 2);\n\n    return {\n      json: {\n        row_number: row.row_number ?? row.rowNumber,\n        to: row.EmailSkipTraced,\n        subject: template.subject,\n        body: template.body,\n        SequenceDay: nextDay,\n        LastSentAt: sentAt.toISOString(),\n        NextSendAt: nextSend.toISOString(),\n        SequenceStatus: 'RUNNING'\n      }\n    };\n  });"
+      },
+      "id": "code-filter-and-template",
+      "name": "Filter + Build Sequence Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toRecipients": "={{$json.to}}",
+        "subject": "={{$json.subject}}",
+        "message": "={{$json.body}}",
+        "options": {}
+      },
+      "id": "outlook-send-sequence",
+      "name": "Send Sequence Email",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        1010,
+        300
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": "",
+        "sheetName": "FSBO_LEADS",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{$json.row_number}}",
+            "SequenceDay": "={{$json.SequenceDay}}",
+            "LastSentAt": "={{$json.LastSentAt}}",
+            "NextSendAt": "={{$json.NextSendAt}}",
+            "SequenceStatus": "={{$json.SequenceStatus}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "gsheets-update-sequence",
+      "name": "Update Sequence State",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1260,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 30 Min (9a-6p ET)": {
+      "main": [
+        [
+          {
+            "node": "Read FSBO_LEADS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read FSBO_LEADS": {
+      "main": [
+        [
+          {
+            "node": "Filter + Build Sequence Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter + Build Sequence Email": {
+      "main": [
+        [
+          {
+            "node": "Send Sequence Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Sequence Email": {
+      "main": [
+        [
+          {
+            "node": "Update Sequence State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "America/New_York"
+  },
+  "versionId": "1"
+}
