@@ -1,0 +1,276 @@
+{
+  "name": "FSBO Intake - Apify (kobimantzur) -> Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyDay",
+              "hour": 6,
+              "minute": 30
+            }
+          ]
+        }
+      },
+      "id": "cron-daily-630",
+      "name": "Cron Daily 6:30 AM ET",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "actorId",
+              "value": "kobimantzur/fsbo-scraper"
+            }
+          ],
+          "json": [
+            {
+              "name": "runInput",
+              "value": "={\n  \"searchQueries\": [\"Myrtle Beach, SC\"]\n}"
+            },
+            {
+              "name": "proxyConfiguration",
+              "value": "={\n  \"useApifyProxy\": true,\n  \"apifyProxyGroups\": [\"RESIDENTIAL\"]\n}"
+            }
+          ],
+          "boolean": [
+            {
+              "name": "useProxy",
+              "value": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-actor-config",
+      "name": "ActorConfig",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/acts/{{$json.actorId}}/runs?waitForFinish=120&token={{$env.APIFY_TOKEN}}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ...$json.runInput, ...($json.useProxy ? { proxyConfiguration: $json.proxyConfiguration } : {}) } }}",
+        "options": {}
+      },
+      "id": "http-run-actor",
+      "name": "Run Apify Actor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "defaultDatasetId",
+              "value": "={{$json.data?.defaultDatasetId || $json.defaultDatasetId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-dataset-id",
+      "name": "Get Dataset ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{$json.defaultDatasetId}}/items?clean=true&format=json&token={{$env.APIFY_TOKEN}}",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "http-get-items",
+      "name": "Fetch Dataset Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const out = [];\n\nfor (const item of items) {\n  const payload = item.json;\n\n  const records = Array.isArray(payload)\n    ? payload\n    : Array.isArray(payload.items)\n      ? payload.items\n      : [payload];\n\n  for (const rec of records) {\n    const listingUrl = rec.listingUrl || rec.url || rec.link || '';\n    const address = rec.address || rec.streetAddress || rec.fullAddress || '';\n    const city = rec.city || '';\n    const state = rec.state || rec.stateCode || '';\n    const zip = rec.zip || rec.zipCode || rec.postalCode || '';\n    const price = rec.price ?? rec.listPrice ?? '';\n    const beds = rec.beds ?? rec.bedrooms ?? '';\n    const baths = rec.baths ?? rec.bathrooms ?? '';\n    const sqft = rec.sqft ?? rec.squareFeet ?? '';\n    const source = rec.source || 'apify:kobimantzur/fsbo-scraper';\n    const dateAdded = rec.dateAdded || rec.createdAt || rec.scrapedAt || new Date().toISOString();\n\n    const dedupeKey = listingUrl || `${address}|${zip}`;\n\n    out.push({\n      json: {\n        listingUrl,\n        address,\n        city,\n        state,\n        zip,\n        price,\n        beds,\n        baths,\n        sqft,\n        source,\n        dateAdded,\n        dedupeKey,\n      },\n    });\n  }\n}\n\nreturn out;"
+      },
+      "id": "fn-normalize-and-key",
+      "name": "NormalizeAndKey",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = this.getWorkflowStaticData('global');\nif (!data.seenKeys) data.seenKeys = {};\n\nconst fresh = [];\nfor (const item of items) {\n  const key = item.json.dedupeKey;\n  if (!key) continue;\n  if (data.seenKeys[key]) continue;\n\n  data.seenKeys[key] = new Date().toISOString();\n  fresh.push(item);\n}\n\nreturn fresh;"
+      },
+      "id": "fn-dedupe",
+      "name": "Dedupe",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "YOUR_GOOGLE_SHEET_ID",
+        "sheetName": "FSBO_LEADS",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "listingUrl": "={{$json.listingUrl}}",
+            "address": "={{$json.address}}",
+            "city": "={{$json.city}}",
+            "state": "={{$json.state}}",
+            "zip": "={{$json.zip}}",
+            "price": "={{$json.price}}",
+            "beds": "={{$json.beds}}",
+            "baths": "={{$json.baths}}",
+            "sqft": "={{$json.sqft}}",
+            "source": "={{$json.source}}",
+            "dateAdded": "={{$json.dateAdded}}",
+            "dedupeKey": "={{$json.dedupeKey}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "gsheets-append",
+      "name": "Google Sheets Append",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2060,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron Daily 6:30 AM ET": {
+      "main": [
+        [
+          {
+            "node": "ActorConfig",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ActorConfig": {
+      "main": [
+        [
+          {
+            "node": "Run Apify Actor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Apify Actor": {
+      "main": [
+        [
+          {
+            "node": "Get Dataset ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Dataset ID": {
+      "main": [
+        [
+          {
+            "node": "Fetch Dataset Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Dataset Items": {
+      "main": [
+        [
+          {
+            "node": "NormalizeAndKey",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NormalizeAndKey": {
+      "main": [
+        [
+          {
+            "node": "Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Append",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York"
+  },
+  "staticData": null,
+  "pinData": {},
+  "active": false,
+  "versionId": "1",
+  "meta": {
+    "instanceId": "fsbo-n8n"
+  },
+  "id": "fsbo-intake-apify-gsheets",
+  "tags": [],
+  "description": "README:\n- Required env var: APIFY_TOKEN\n- Required credential: Google Sheets OAuth2 (set in Google Sheets Append node)\n- Configure target sheet in Google Sheets Append node: documentId=YOUR_GOOGLE_SHEET_ID, tab=FSBO_LEADS\n- Actor input is configured in ActorConfig node. Edit runInput.searchQueries as needed.\n- Optional proxy is controlled by ActorConfig.useProxy boolean and ActorConfig.proxyConfiguration object."
+}
