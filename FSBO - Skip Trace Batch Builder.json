@@ -1,0 +1,267 @@
+{
+  "name": "FSBO - Skip Trace Batch Builder",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyDay",
+              "hour": 7,
+              "minute": 0
+            }
+          ]
+        }
+      },
+      "id": "cron-daily-700",
+      "name": "Daily 7:00 AM ET",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "",
+        "sheetName": "FSBO_LEADS",
+        "options": {
+          "returnAll": true,
+          "addRowNumber": true
+        }
+      },
+      "id": "gsheets-read",
+      "name": "Read FSBO Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const batchId = `BATCH_${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;\n\nconst eligible = items\n  .map((item) => item.json)\n  .filter((row) => {\n    const status = (row.SkipTraceStatus ?? '').toString().trim();\n    return status === '';\n  })\n  .slice(0, 50);\n\nreturn eligible.map((row) => ({\n  json: {\n    row_number: row.row_number ?? row.rowNumber,\n    SkipTraceStatus: 'SENT',\n    BatchId: batchId,\n    address: row.address ?? '',\n    city: row.city ?? '',\n    state: row.state ?? '',\n    zip: row.zip ?? '',\n    ownerName: row.ownerName ?? ''\n  }\n}));"
+      },
+      "id": "code-build-batch",
+      "name": "Build Batch + Limit 50",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        730,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": "",
+        "sheetName": "FSBO_LEADS",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{$json.row_number}}",
+            "SkipTraceStatus": "={{$json.SkipTraceStatus}}",
+            "BatchId": "={{$json.BatchId}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "gsheets-update",
+      "name": "Mark Rows SENT + BatchId",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1010,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "address",
+              "value": "={{$json.address}}"
+            },
+            {
+              "name": "city",
+              "value": "={{$json.city}}"
+            },
+            {
+              "name": "state",
+              "value": "={{$json.state}}"
+            },
+            {
+              "name": "zip",
+              "value": "={{$json.zip}}"
+            },
+            {
+              "name": "ownerName",
+              "value": "={{$json.ownerName}}"
+            },
+            {
+              "name": "BatchId",
+              "value": "={{$json.BatchId}}"
+            },
+            {
+              "name": "csvFileName",
+              "value": "={{`skiptrace_batch_${$json.BatchId}.csv`}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-csv-fields",
+      "name": "Prepare CSV Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "csv",
+        "options": {
+          "fileName": "={{$json.csvFileName}}"
+        }
+      },
+      "id": "spreadsheet-to-csv",
+      "name": "Create CSV File",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [
+        1510,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toRecipients": "",
+        "subject": "={{`Skip Trace Batch ${$items('Build Batch + Limit 50', 0, 0).json.BatchId}`}}",
+        "message": "={{`Attached is your skip trace batch file for ${$items('Build Batch + Limit 50', 0, 0).json.BatchId}.`}}",
+        "attachmentsUi": {
+          "attachmentsBinary": [
+            {
+              "property": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "outlook-send",
+      "name": "Send CSV via Outlook",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [
+        1750,
+        300
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 7:00 AM ET": {
+      "main": [
+        [
+          {
+            "node": "Read FSBO Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read FSBO Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Batch + Limit 50",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Batch + Limit 50": {
+      "main": [
+        [
+          {
+            "node": "Mark Rows SENT + BatchId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Rows SENT + BatchId": {
+      "main": [
+        [
+          {
+            "node": "Prepare CSV Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare CSV Fields": {
+      "main": [
+        [
+          {
+            "node": "Create CSV File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CSV File": {
+      "main": [
+        [
+          {
+            "node": "Send CSV via Outlook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York"
+  },
+  "active": false,
+  "pinData": {},
+  "versionId": "1",
+  "meta": {
+    "instanceId": "fsbo-n8n"
+  },
+  "id": "fsbo-skip-trace-batch-builder"
+}
