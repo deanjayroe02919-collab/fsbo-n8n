@@ -1,0 +1,177 @@
+{
+  "name": "FSBO Intake - Apify to Google Sheets (Import Safe)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    actorId: 'kobimantzur/fsbo-scraper',\n    runInput: {\n      searchQueries: ['Myrtle Beach, SC']\n    },\n    useProxy: false,\n    proxyConfiguration: {\n      useApifyProxy: true,\n      apifyProxyGroups: ['RESIDENTIAL']\n    }\n  }\n}];"
+      },
+      "id": "build-config",
+      "name": "Build Config",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/acts/{{$json.actorId}}/runs?waitForFinish=120&token={{$env.APIFY_TOKEN}}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ...$json.runInput, ...($json.useProxy ? { proxyConfiguration: $json.proxyConfiguration } : {}) } }}"
+      },
+      "id": "run-apify-actor",
+      "name": "Run Apify Actor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const defaultDatasetId = $json.data?.defaultDatasetId || $json.defaultDatasetId || '';\nreturn [{ json: { defaultDatasetId } }];"
+      },
+      "id": "extract-dataset-id",
+      "name": "Extract Dataset ID",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{$json.defaultDatasetId}}/items?clean=true&format=json&token={{$env.APIFY_TOKEN}}",
+        "method": "GET"
+      },
+      "id": "fetch-dataset-items",
+      "name": "Fetch Dataset Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const out = [];\n\nfor (const item of items) {\n  const payload = item.json;\n  const records = Array.isArray(payload)\n    ? payload\n    : Array.isArray(payload.items)\n      ? payload.items\n      : [payload];\n\n  for (const rec of records) {\n    const listingUrl = rec.listingUrl || rec.url || rec.link || '';\n    const address = rec.address || rec.streetAddress || rec.fullAddress || '';\n    const city = rec.city || '';\n    const state = rec.state || rec.stateCode || '';\n    const zip = rec.zip || rec.zipCode || rec.postalCode || '';\n    const price = rec.price ?? rec.listPrice ?? '';\n    const beds = rec.beds ?? rec.bedrooms ?? '';\n    const baths = rec.baths ?? rec.bathrooms ?? '';\n    const sqft = rec.sqft ?? rec.squareFeet ?? '';\n    const source = rec.source || 'apify:kobimantzur/fsbo-scraper';\n    const dateAdded = rec.dateAdded || rec.createdAt || rec.scrapedAt || new Date().toISOString();\n    const dedupeKey = listingUrl || `${address}|${zip}`;\n\n    out.push({\n      json: {\n        listingUrl,\n        address,\n        city,\n        state,\n        zip,\n        price,\n        beds,\n        baths,\n        sqft,\n        source,\n        dateAdded,\n        dedupeKey\n      }\n    });\n  }\n}\n\nreturn out;"
+      },
+      "id": "normalize-records",
+      "name": "Normalize Records",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = this.getWorkflowStaticData('global');\nif (!data.seenKeys) data.seenKeys = {};\n\nconst fresh = [];\nfor (const item of items) {\n  const key = item.json.dedupeKey;\n  if (!key) continue;\n  if (data.seenKeys[key]) continue;\n\n  data.seenKeys[key] = new Date().toISOString();\n  fresh.push(item);\n}\n\nreturn fresh;"
+      },
+      "id": "dedupe",
+      "name": "Dedupe",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Config": {
+      "main": [
+        [
+          {
+            "node": "Run Apify Actor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Apify Actor": {
+      "main": [
+        [
+          {
+            "node": "Extract Dataset ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Dataset ID": {
+      "main": [
+        [
+          {
+            "node": "Fetch Dataset Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Dataset Items": {
+      "main": [
+        [
+          {
+            "node": "Normalize Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Records": {
+      "main": [
+        [
+          {
+            "node": "Dedupe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York"
+  },
+  "active": false,
+  "pinData": {},
+  "versionId": "1",
+  "meta": {
+    "instanceId": "fsbo-n8n"
+  },
+  "id": "fsbo-import-safe"
+}
