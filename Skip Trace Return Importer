@@ -1,0 +1,191 @@
+{
+  "name": "FSBO - Skip Trace Import",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "",
+        "sheetName": "SKIPTRACE_RETURN",
+        "options": {
+          "returnAll": true,
+          "addRowNumber": true
+        }
+      },
+      "id": "read-skiptrace-return",
+      "name": "Read SKIPTRACE_RETURN",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": "",
+        "sheetName": "FSBO_LEADS",
+        "options": {
+          "returnAll": true,
+          "addRowNumber": true
+        }
+      },
+      "id": "read-fsbo-leads",
+      "name": "Read FSBO_LEADS",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        470,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "wait"
+      },
+      "id": "merge-readers",
+      "name": "Wait for Both Reads",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        710,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const normalize = (value) => String(value ?? '').trim().toUpperCase();\n\nconst skipRows = $items('Read SKIPTRACE_RETURN', 0, 0).map((item) => item.json);\nconst fsboRows = $items('Read FSBO_LEADS', 0, 0).map((item) => item.json);\n\nconst fsboByKey = new Map();\nfor (const lead of fsboRows) {\n  const key = `${normalize(lead.Address ?? lead.address)}|${normalize(lead.Zip ?? lead.zip)}`;\n  if (!key || key === '|') continue;\n  if (!fsboByKey.has(key)) fsboByKey.set(key, []);\n  fsboByKey.get(key).push(lead);\n}\n\nconst usedLeadRows = new Set();\nconst updates = [];\n\nfor (const returned of skipRows) {\n  const key = `${normalize(returned.Address ?? returned.address)}|${normalize(returned.Zip ?? returned.zip)}`;\n  if (!key || key === '|') continue;\n\n  const candidates = fsboByKey.get(key) || [];\n  const match = candidates.find((lead) => {\n    const leadRow = lead.row_number ?? lead.rowNumber;\n    return leadRow !== undefined && !usedLeadRows.has(leadRow);\n  });\n\n  if (!match) continue;\n\n  const leadRowNumber = match.row_number ?? match.rowNumber;\n  usedLeadRows.add(leadRowNumber);\n\n  updates.push({\n    json: {\n      row_number: leadRowNumber,\n      PhoneSkipTraced: returned.PhoneSkipTraced ?? returned.phoneSkipTraced ?? returned.Phone ?? returned.phone ?? '',\n      EmailSkipTraced: returned.EmailSkipTraced ?? returned.emailSkipTraced ?? returned.Email ?? returned.email ?? '',\n      SkipTraceStatus: 'RETURNED',\n      SequenceStatus: 'READY'\n    }\n  });\n}\n\nreturn updates;"
+      },
+      "id": "code-match-and-build-updates",
+      "name": "Match Address + Zip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        950,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": "",
+        "sheetName": "FSBO_LEADS",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{$json.row_number}}",
+            "PhoneSkipTraced": "={{$json.PhoneSkipTraced}}",
+            "EmailSkipTraced": "={{$json.EmailSkipTraced}}",
+            "SkipTraceStatus": "={{$json.SkipTraceStatus}}",
+            "SequenceStatus": "={{$json.SequenceStatus}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "update-fsbo-leads",
+      "name": "Update FSBO_LEADS",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1220,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read SKIPTRACE_RETURN",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read FSBO_LEADS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read SKIPTRACE_RETURN": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both Reads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read FSBO_LEADS": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both Reads",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait for Both Reads": {
+      "main": [
+        [
+          {
+            "node": "Match Address + Zip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Address + Zip": {
+      "main": [
+        [
+          {
+            "node": "Update FSBO_LEADS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
