@@ -1,0 +1,187 @@
+{
+  "name": "Inbox Guard - Lead Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "messageReceived",
+        "options": {
+          "folder": "inbox"
+        }
+      },
+      "id": "outlook-trigger-new-email",
+      "name": "Outlook New Email",
+      "type": "n8n-nodes-base.microsoftOutlookTrigger",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "subject-has-lead",
+              "leftValue": "={{$json.subject || $json.Subject || ''}}",
+              "rightValue": "lead",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "subject-has-showing",
+              "leftValue": "={{$json.subject || $json.Subject || ''}}",
+              "rightValue": "showing",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "subject-has-information",
+              "leftValue": "={{$json.subject || $json.Subject || ''}}",
+              "rightValue": "information",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "subject-has-request",
+              "leftValue": "={{$json.subject || $json.Subject || ''}}",
+              "rightValue": "request",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "if-subject-filter",
+      "name": "IF Subject Is Lead Intent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "",
+        "to": "",
+        "message": "🔥 NEW LEAD ALERT - Check Outlook now.",
+        "options": {}
+      },
+      "id": "twilio-send-sms",
+      "name": "Twilio Send Alert SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        780,
+        220
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "",
+        "sheetName": "INBOX_LOG",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{$now.toISO()}}",
+            "From": "={{$json.from?.emailAddress?.address || $json.from || $json.sender?.emailAddress?.address || ''}}",
+            "Subject": "={{$json.subject || $json.Subject || ''}}",
+            "AlertSent": "YES"
+          }
+        },
+        "options": {}
+      },
+      "id": "google-sheets-append-log",
+      "name": "Append INBOX_LOG",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        220
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Outlook New Email": {
+      "main": [
+        [
+          {
+            "node": "IF Subject Is Lead Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Subject Is Lead Intent": {
+      "main": [
+        [
+          {
+            "node": "Twilio Send Alert SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Twilio Send Alert SMS": {
+      "main": [
+        [
+          {
+            "node": "Append INBOX_LOG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "America/New_York"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
