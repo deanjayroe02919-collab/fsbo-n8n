@@ -1,0 +1,2 @@
+dateAdded,source,listingUrl,address,city,state,zip,price,beds,baths,sqft,dedupeKey,SkipTraceStatus,BatchId,PhoneSkipTraced,EmailSkipTraced,SequenceStatus,SequenceDay,NextSendAt,LastSentAt,LastStepSent,Status,Notes
+2026-03-03T13:00:00Z,ZillowFSBO,https://www.zillow.com/homedetails/123456,123 Maple St,Austin,TX,78704,425000,3,2,1840,123maplest_austin_tx_78704,completed,BATCH-20260303-001,+15125551234,jane.owner@example.com,active,2,2026-03-04T15:00:00Z,2026-03-03T15:00:00Z,intro_email_1,New Lead,Owner prefers afternoon calls
