@@ -1,0 +1,646 @@
+{
+  "name": "Myrtle Beach TikTok Image Content Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "city",
+              "value": "Myrtle Beach"
+            },
+            {
+              "name": "state",
+              "value": "SC"
+            },
+            {
+              "name": "sheetName",
+              "value": "={{$env.SHEET_NAME || 'ContentQueue'}}"
+            },
+            {
+              "name": "spreadsheetId",
+              "value": "={{$env.SPREADSHEET_ID || ''}}"
+            },
+            {
+              "name": "googleDriveFolderId",
+              "value": "={{$env.GOOGLE_DRIVE_FOLDER_ID || ''}}"
+            },
+            {
+              "name": "ctaLink",
+              "value": "={{$env.CTA_LINK || 'https://tally.so/r/lb608W'}}"
+            },
+            {
+              "name": "bytezApiKey",
+              "value": "={{$env.BYTEZ_API_KEY || ''}}"
+            },
+            {
+              "name": "bytezTextModel",
+              "value": "={{$env.BYTEZ_TEXT_MODEL || ''}}"
+            },
+            {
+              "name": "bytezImageModel",
+              "value": "={{$env.BYTEZ_IMAGE_MODEL || ''}}"
+            }
+          ],
+          "number": [
+            {
+              "name": "postsPerDay",
+              "value": "={{Number($env.POSTS_PER_DAY || 10)}}"
+            }
+          ],
+          "json": [
+            {
+              "name": "categories",
+              "value": "[\"Living in Myrtle Beach\", \"Buying tips\", \"STR / Airbnb investing\", \"Condotel / financing / loopholes\", \"Mistakes / warnings\", \"Local secrets / insider info\", \"Price ranges / what you get for $X\", \"New construction\"]"
+            },
+            {
+              "name": "imageStyles",
+              "value": "[{\"image_style\": \"Clean Luxury Coastal\", \"style_prompt\": \"High-end Myrtle Beach oceanfront condo, palm trees, bright sunlight, luxury real estate photography, cinematic lighting, ultra realistic\"}, {\"image_style\": \"Neighborhood Lifestyle\", \"style_prompt\": \"Suburban Myrtle Beach neighborhood, sidewalks, palm trees, modern homes, sunny day, realistic real estate photo, welcoming environment\"}, {\"image_style\": \"Aerial / Drone\", \"style_prompt\": \"Aerial drone view of Myrtle Beach coastline, condos, ocean, skyline, bright blue water, high detail, real estate marketing style\"}, {\"image_style\": \"Investment / Condo Focus\", \"style_prompt\": \"Modern beachfront condo interior in Myrtle Beach, balcony ocean view, clean design, bright natural light, realistic photography\"}, {\"image_style\": \"New Construction\", \"style_prompt\": \"Brand new construction home Myrtle Beach, clean modern exterior, driveway, landscaping, sunny day, high resolution real estate photo\"}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-config",
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.bytez.com/models/v2/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$json.bytezApiKey}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $json.bytezTextModel,\n  temperature: 0.8,\n  max_tokens: 1400,\n  response_format: { type: 'json_object' },\n  messages: [\n    {\n      role: 'system',\n      content: 'You are a Myrtle Beach real estate content strategist. Return only valid JSON.'\n    },\n    {\n      role: 'user',\n      content: `Generate ${$json.postsPerDay} fresh TikTok image-post topics for today.\\n\\nBusiness goals:\\n- get views from TikTok search\\n- attract relocation buyers, home buyers, condo buyers, STR investors, condotel buyers, and new construction buyers\\n- convert traffic into leads for a real estate agent\\n\\nAllowed categories:\\n1. Living in Myrtle Beach\\n2. Buying tips\\n3. STR / Airbnb investing\\n4. Condotel / financing / loopholes\\n5. Mistakes / warnings\\n6. Local secrets / insider info\\n7. Price ranges / what you get for $X\\n8. New construction\\n\\nRules:\\n- focus on Myrtle Beach, South Carolina\\n- use search-intent phrasing\\n- make topics feel current and fresh\\n- rotate across the allowed categories as evenly as possible\\n- avoid duplicate angles\\n- avoid robotic phrasing\\n- avoid fair housing risk language\\n- do not use phrases like \"safe neighborhood\", \"best neighborhood\", or protected-class implications\\n- return only valid JSON using this exact wrapper shape: {\"topics\":[{\"category\":\"Living in Myrtle Beach\",\"topic\":\"Moving to Myrtle Beach full-time\",\"keyword\":\"living in myrtle beach sc\"}]}\\n- every object inside topics must contain: category, topic, keyword`\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "generate-daily-topics",
+      "name": "Generate Daily Topics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const source = items[0].json;\nconst raw = source.choices?.[0]?.message?.content ?? source.output ?? source.data ?? '';\n\nconst normalize = (value) => {\n  if (typeof value !== 'string') return value;\n  const trimmed = value.trim();\n  const fenced = trimmed.match(/^```(?:json)?\\s*([\\s\\S]*?)\\s*```$/i);\n  if (fenced) return fenced[1].trim();\n  return trimmed;\n};\n\nconst parseContent = (value) => {\n  const cleaned = normalize(value);\n  const parsed = JSON.parse(cleaned);\n  const topics = Array.isArray(parsed) ? parsed : parsed.topics;\n  if (!Array.isArray(topics)) {\n    throw new Error('Topic response did not contain a topics array.');\n  }\n  return topics;\n};\n\nconst topics = parseContent(raw);\nreturn topics.map((topic, index) => ({\n  json: {\n    ...topic,\n    topic_index: index + 1,\n    config: $items('Set Config', 0, 0)[0].json\n  }\n}));"
+      },
+      "id": "parse-topics",
+      "name": "Parse Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const rawStyles = $json.config.imageStyles;\nconst styles = Array.isArray(rawStyles) ? rawStyles : JSON.parse(rawStyles);\nconst style = styles[Math.floor(Math.random() * styles.length)];\nreturn [{\n  json: {\n    ...$json,\n    image_style: style.image_style,\n    style_prompt: style.style_prompt\n  }\n}];"
+      },
+      "id": "assign-image-style",
+      "name": "Assign Image Style",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1270,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.bytez.com/models/v2/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$json.config.bytezApiKey}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $json.config.bytezTextModel,\n  temperature: 0.9,\n  max_tokens: 1200,\n  response_format: { type: 'json_object' },\n  messages: [\n    { role: 'system', content: 'You are a Myrtle Beach real estate marketing expert. Return only valid JSON.' },\n    { role: 'user', content: `Create one TikTok IMAGE POST package for lead generation.\\n\\nINPUT:\\nCategory: ${$json.category}\\nTopic: ${$json.topic}\\nKeyword: ${$json.keyword}\\nImage Style: ${$json.image_style}\\nStyle Prompt: ${$json.style_prompt}\\n\\nBusiness goal:\\nDrive traffic and leads for a Myrtle Beach real estate agent.\\n\\nOffer:\\nGet a custom list of homes or investment properties in Myrtle Beach\\n\\nCTA link:\\n${$json.config.ctaLink}\\n\\nReturn valid JSON only with:\\nhook\\ncaption\\nhashtags\\ncta\\nimage_prompt\\nscore\\n\\nRules:\\n- hook must be 3 to 8 words\\n- hook should create curiosity or urgency\\n- caption must be short, conversational, and include the keyword naturally\\n- hashtags must be 5 to 8 relevant hashtags\\n- cta must point to the provided link\\n- image_prompt must describe a realistic Myrtle Beach real estate visual\\n- image_prompt must explicitly instruct bold text overlay using the hook\\n- image_prompt must specify vertical composition\\n- no markdown\\n- no extra commentary\\n- no fair housing risky wording\\n- no robotic wording\\n- make it feel local and useful` }\n  ]\n} }}",
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "generate-post-package",
+      "name": "Generate Post Package",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const previous = $items('Assign Image Style', 0, $itemIndex)[0].json;\nconst current = items[0].json;\n\nconst normalize = (value) => {\n  if (typeof value !== 'string') return value;\n  const trimmed = value.trim();\n  const fenced = trimmed.match(/^```(?:json)?\\s*([\\s\\S]*?)\\s*```$/i);\n  return fenced ? fenced[1].trim() : trimmed;\n};\n\nif (current.error) {\n  return [{\n    json: {\n      ...previous,\n      generation_error: typeof current.error === 'string' ? current.error : JSON.stringify(current.error),\n      status: 'REJECTED'\n    }\n  }];\n}\n\nconst raw = current.choices?.[0]?.message?.content ?? current.output ?? current.data ?? '';\nconst parsed = JSON.parse(normalize(raw));\n\nreturn [{\n  json: {\n    ...previous,\n    hook: parsed.hook,\n    caption: parsed.caption,\n    hashtags: parsed.hashtags,\n    cta: parsed.cta,\n    image_prompt: parsed.image_prompt,\n    score: Number(parsed.score ?? 0),\n    status: 'READY'\n  }\n}];"
+      },
+      "id": "parse-post-package",
+      "name": "Parse Post Package",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1770,
+        300
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const notes = [];\nconst baseStatus = $json.status || 'READY';\nif ($json.generation_error) notes.push(`Copy generation failed: ${$json.generation_error}`);\n\nconst fallbackHook = $json.topic ? `${$json.topic}`.split(' ').slice(0, 6).join(' ') : 'Myrtle Beach Update';\nconst hook = ($json.hook || fallbackHook).replace(/[\\r\\n]+/g, ' ').trim();\nconst caption = $json.caption || `Useful Myrtle Beach real estate insight for ${$json.keyword || 'Myrtle Beach buyers'}.`;\nconst hashtags = $json.hashtags || '#myrtlebeach #myrtlebeachrealestate #southcarolinarealestate #coastalliving #realestatetips';\nconst cta = $json.cta || `Get a custom list of homes or investment properties in Myrtle Beach \u2192 ${$json.config.ctaLink}`;\nconst generatedPrompt = $json.image_prompt || `Vertical premium Myrtle Beach real estate marketing image with bold overlay text reading \"${hook}\".`;\nconst finalImagePrompt = [\n  generatedPrompt,\n  `Assigned style direction: ${$json.style_prompt}.`,\n  `Bold overlay text displaying exactly: \"${hook}\".`,\n  'Center or top-third text placement.',\n  'Large, bold, high-contrast readable text.',\n  'Vertical-friendly 9:16 composition for TikTok image posts.',\n  'Premium realistic Myrtle Beach real estate aesthetic.',\n  'No watermarks, no gibberish text, and no extra random signage unless naturally relevant to a real estate scene.'\n].join(' ');\n\nreturn [{\n  json: {\n    ...$json,\n    hook,\n    caption,\n    hashtags,\n    cta,\n    score: Number.isFinite(Number($json.score)) ? Number($json.score) : 0,\n    final_image_prompt: finalImagePrompt,\n    notes: notes.join(' | '),\n    status: baseStatus\n  }\n}];"
+      },
+      "id": "enhance-final-image-prompt",
+      "name": "Enhance Final Image Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.status}}",
+              "rightValue": "READY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-ready-for-image",
+      "name": "IF Ready For Image",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.bytez.com/models/v2/{{$json.config.bytezImageModel}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{$json.config.bytezApiKey}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { text: $json.final_image_prompt } }}",
+        "options": {
+          "timeout": 180000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2,
+            "waitBetweenTries": 3000
+          }
+        }
+      },
+      "id": "generate-image",
+      "name": "Generate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2510,
+        220
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.output || $json.image_url}}",
+        "responseFormat": "file",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "download-generated-image",
+      "name": "Download Generated Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2750,
+        220
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "name": "={{`${$items('Enhance Final Image Prompt', 0, $itemIndex)[0].json.topic_index || 'post'}-${(($items('Enhance Final Image Prompt', 0, $itemIndex)[0].json.keyword || 'myrtle-beach')).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`}}",
+        "parents": [
+          "={{$items('Enhance Final Image Prompt', 0, $itemIndex)[0].json.config.googleDriveFolderId}}"
+        ],
+        "options": {}
+      },
+      "id": "upload-image-to-google-drive",
+      "name": "Upload Image to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2990,
+        220
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const source = $items('Enhance Final Image Prompt', 0, $itemIndex)[0].json;\nconst imageResult = $items('Generate Image', 0, $itemIndex)[0]?.json || {};\nconst downloadResult = $items('Download Generated Image', 0, $itemIndex)[0]?.json || {};\nconst driveResult = items[0]?.json || {};\n\nlet status = source.status || 'READY';\nconst notes = [];\nif (source.notes) notes.push(source.notes);\n\nconst generatedImageUrl = imageResult.output || '';\nlet imageUrl = '';\n\nif (imageResult.error) {\n  status = 'REJECTED';\n  notes.push(`Image generation failed: ${typeof imageResult.error === 'string' ? imageResult.error : JSON.stringify(imageResult.error)}`);\n}\n\nif (downloadResult.error) {\n  notes.push(`Image download failed: ${typeof downloadResult.error === 'string' ? downloadResult.error : JSON.stringify(downloadResult.error)}`);\n}\n\nif (driveResult.error) {\n  notes.push(`Google Drive upload failed: ${typeof driveResult.error === 'string' ? driveResult.error : JSON.stringify(driveResult.error)}`);\n  imageUrl = '';\n} else if (driveResult.webViewLink || driveResult.webContentLink) {\n  imageUrl = driveResult.webContentLink || driveResult.webViewLink;\n} else if (generatedImageUrl && !driveResult.error) {\n  imageUrl = generatedImageUrl;\n}\n\nconst now = new Date();\nconst createdAt = now.toISOString();\nconst postDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);\nconst randomId = Math.random().toString(36).slice(2, 8).toUpperCase();\nconst contentId = `MB-${postDate.replace(/-/g, '')}-${String(source.topic_index || 0).padStart(2, '0')}-${randomId}`;\n\nreturn [{\n  json: {\n    content_id: contentId,\n    created_at: createdAt,\n    post_date: postDate,\n    category: source.category || '',\n    topic: source.topic || '',\n    keyword: source.keyword || '',\n    hook: source.hook || '',\n    image_style: source.image_style || '',\n    image_prompt: source.final_image_prompt || source.image_prompt || '',\n    image_url: imageUrl,\n    caption: source.caption || '',\n    hashtags: source.hashtags || '',\n    cta: source.cta || `Get a custom list of homes or investment properties in Myrtle Beach \u2192 ${source.config.ctaLink}`,\n    status,\n    score: Number.isFinite(Number(source.score)) ? Number(source.score) : 0,\n    notes: notes.filter(Boolean).join(' | ')\n  }\n}];"
+      },
+      "id": "prepare-ready-row",
+      "name": "Prepare Ready/Rejected Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3230,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "language": "JavaScript",
+        "jsCode": "const source = items[0].json;\nconst now = new Date();\nconst createdAt = now.toISOString();\nconst postDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(now);\nconst randomId = Math.random().toString(36).slice(2, 8).toUpperCase();\nconst contentId = `MB-${postDate.replace(/-/g, '')}-${String(source.topic_index || 0).padStart(2, '0')}-${randomId}`;\nconst fallbackNotes = [source.notes, source.generation_error && `Copy generation failed: ${source.generation_error}`].filter(Boolean).join(' | ');\n\nreturn [{\n  json: {\n    content_id: contentId,\n    created_at: createdAt,\n    post_date: postDate,\n    category: source.category || '',\n    topic: source.topic || '',\n    keyword: source.keyword || '',\n    hook: source.hook || '',\n    image_style: source.image_style || '',\n    image_prompt: source.final_image_prompt || source.image_prompt || '',\n    image_url: '',\n    caption: source.caption || '',\n    hashtags: source.hashtags || '',\n    cta: source.cta || `Get a custom list of homes or investment properties in Myrtle Beach \u2192 ${source.config.ctaLink}`,\n    status: 'REJECTED',\n    score: Number.isFinite(Number(source.score)) ? Number(source.score) : 0,\n    notes: fallbackNotes || 'Post package could not be generated.'\n  }\n}];"
+      },
+      "id": "prepare-rejected-row",
+      "name": "Prepare Rejected Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2510,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "merge-rows",
+      "name": "Merge Rows",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3470,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$json.spreadsheetId || $items('Set Config', 0, 0)[0].json.spreadsheetId}}",
+        "sheetName": "={{$items('Set Config', 0, 0)[0].json.sheetName}}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "content_id": "={{$json.content_id}}",
+            "created_at": "={{$json.created_at}}",
+            "post_date": "={{$json.post_date}}",
+            "category": "={{$json.category}}",
+            "topic": "={{$json.topic}}",
+            "keyword": "={{$json.keyword}}",
+            "hook": "={{$json.hook}}",
+            "image_style": "={{$json.image_style}}",
+            "image_prompt": "={{$json.image_prompt}}",
+            "image_url": "={{$json.image_url}}",
+            "caption": "={{$json.caption}}",
+            "hashtags": "={{$json.hashtags}}",
+            "cta": "={{$json.cta}}",
+            "status": "={{$json.status}}",
+            "score": "={{$json.score}}",
+            "notes": "={{$json.notes}}"
+          }
+        },
+        "options": {}
+      },
+      "id": "append-row-to-google-sheets",
+      "name": "Append Row to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        3720,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "TikTok draft upload can be added later as a separate branch after Google Sheets append, reusing the READY rows and Google Drive image_url output.",
+        "height": 220,
+        "width": 320,
+        "color": 5
+      },
+      "id": "future-phase-note",
+      "name": "Phase 2 Extension Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3950,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Config": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Topics": {
+      "main": [
+        [
+          {
+            "node": "Parse Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Topics": {
+      "main": [
+        [
+          {
+            "node": "Assign Image Style",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign Image Style": {
+      "main": [
+        [
+          {
+            "node": "Generate Post Package",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Post Package": {
+      "main": [
+        [
+          {
+            "node": "Parse Post Package",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Post Package": {
+      "main": [
+        [
+          {
+            "node": "Enhance Final Image Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enhance Final Image Prompt": {
+      "main": [
+        [
+          {
+            "node": "IF Ready For Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Ready For Image": {
+      "main": [
+        [
+          {
+            "node": "Generate Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Rejected Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Image": {
+      "main": [
+        [
+          {
+            "node": "Download Generated Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Generated Image": {
+      "main": [
+        [
+          {
+            "node": "Upload Image to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Prepare Ready/Rejected Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Ready/Rejected Row": {
+      "main": [
+        [
+          {
+            "node": "Merge Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Rejected Row": {
+      "main": [
+        [
+          {
+            "node": "Merge Rows",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Row to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York",
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "fsbo-n8n"
+  },
+  "pinData": {},
+  "tags": [
+    {
+      "name": "real-estate"
+    },
+    {
+      "name": "tiktok"
+    },
+    {
+      "name": "bytez"
+    }
+  ]
+}
